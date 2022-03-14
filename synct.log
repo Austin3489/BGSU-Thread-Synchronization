@@ -1,0 +1,3381 @@
+Script started on Mon Nov  1 22:50:24 2021
+]0;acarico@bglinux1:~/cs3080/syncs[?1034h~/cs3080/syncs$ pwd 
+/home/73/acarico/cs3080/syncs
+]0;acarico@bglinux1:~/cs3080/syncs~/cs3080/syncs$ ls -o
+total 36
+-rwxr-xr-x. 1 acarico 13896 Nov  1 22:48 [0m[01;32msynct[0m
+-rw-r--r--. 1 acarico  3763 Nov  1 21:48 synct.cpp
+-rw-r--r--. 1 acarico  1634 Oct 29 23:38 synct.cpp.save
+-rw-------. 1 acarico     0 Oct 30 00:29 synct.cpp.save.1
+-rw-r--r--. 1 acarico  2508 Oct 30 00:29 synct.cpp.save.2
+-rw-r--r--. 1 acarico  2892 Oct 30 03:24 synct.cpp.save.3
+-rw-r--r--. 1 acarico  2925 Oct 31 13:46 synct.cpp.save.4
+-rw-r--r--. 1 acarico     0 Nov  1 22:50 synct.log
+]0;acarico@bglinux1:~/cs3080/syncs~/cs3080/syncs$ cat synct.cpp
+//This is the code for Lab 4 in CS3080
+//Author: Austin Carico
+//November 1st, 2021
+//This uses 6 producer threads and 6 consumer threads to produce
+//and then consume random numbers and calculate their average, min and max
+
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+       
+#define NUM_PRODUCERS 6
+#define NUM_CONSUMERS 6
+#define BSIZE 10                // Buffer size is 10
+            
+
+int numItems;
+int range;
+int bcounter = 0;
+int buf[BSIZE];
+int NextIn=0, NextOut=0;
+int totMin = 1000;
+int totMax = 0;
+int totAvg = 0;
+int total = 0;
+
+void * producer(void *);        // function for producer thread
+void * consumer(void *);        // function for consumer thread
+
+pthread_t ptid[NUM_PRODUCERS]; // Producer ID's
+pthread_t ctid[NUM_CONSUMERS];	//Consumer ID's
+
+pthread_cond_t empty; 
+pthread_cond_t full;
+pthread_mutex_t lock;
+pthread_t myID = pthread_self();
+
+int main( int argc, char *argv[] ){ //start of main
+  srand(myID);
+  
+  //initializing of conditions
+  pthread_cond_init(&empty, NULL);
+  pthread_cond_init(&full, NULL);
+  pthread_mutex_init(&lock, NULL);
+  //arguments taken in
+  numItems = atoi(argv[1]);
+  range = atoi(argv[2]);
+  
+  pthread_cond_signal(&empty);
+  int i;
+  printf("\n **** Main Program creating threads ++++ \n");
+  //thread creation
+  for(i = 0; i < NUM_PRODUCERS; i++){
+	pthread_create(&ptid[i], NULL, producer, NULL);
+  }
+  for(i = 0; i < NUM_CONSUMERS; i++){
+	pthread_create(&ctid[i], NULL, consumer, NULL);
+  }
+      
+ //thread termination with pthread_join
+  for(i = 0; i < NUM_PRODUCERS; i++){    //terminating threads
+        pthread_join(ptid[i], NULL);
+  }
+  for(i = 0; i < NUM_CONSUMERS; i++){    //terminating threads
+        pthread_join(ctid[i], NULL);
+  }
+
+
+  totAvg = total / (numItems * NUM_CONSUMERS);// calculate average
+  printf("Overall values:\n Min of total: %d. Max of total: %d. Total Average: %d.\n", totMin, totMax,totAvg);
+  pthread_exit(0);
+  return 0;
+} // end main
+
+void * producer(void * parm)
+{
+  int num;
+  printf(" \n+++Producer Started+++ \n");
+
+  //produce item
+  for(int j = 0; j < numItems; j++){
+	pthread_mutex_lock(&lock);
+	//check if buffer is full
+	while(bcounter == BSIZE){ 
+		printf("\n Producer found the buffer is full, is waiting currently\n");
+		pthread_cond_wait(&empty, &lock);
+        }
+	bcounter++;
+  	num = rand() % range;
+  	buf[NextIn] = num;
+  	NextIn = (NextIn + 1) %  BSIZE;
+  	printf("  Produced item %d\n", num);
+	pthread_cond_signal(&full);
+  	pthread_mutex_unlock(&lock);
+  	
+  }
+
+  printf("\n---Producer Exiting---\n");
+
+  pthread_exit(0); 
+}
+void * consumer(void * parm)
+{
+  int count = 0;
+  int cnum;
+  
+  printf("\n ---Consumer Started --- \n");
+  //declaring local min max and avg variables
+  int myMin = 1000;
+  int myMax = 0;
+  int myAvg;
+  int myTotal;
+  while(count < numItems){
+
+	//consume item
+ 	cnum = buf[NextOut];
+        if(cnum < myMin){
+               myMin = cnum;
+        }
+        else if(cnum > myMax){
+               myMax = cnum;
+        }
+        myTotal += cnum;
+
+	
+	pthread_mutex_lock(&lock);	
+	//check if buffer is empty
+	while(bcounter == 0){
+		printf("\n Consumer says buffer is empty, unable to find product\n");
+		pthread_cond_wait(&full, &lock);
+	}
+
+	bcounter--;
+	NextOut = (NextOut + 1) % BSIZE;
+	printf("Consuming item: %d\n", cnum);
+	count++;
+	pthread_cond_signal(&empty);
+	pthread_mutex_unlock(&lock);
+
+
+	
+  }
+  myAvg = myTotal/numItems; //calculating consumer average
+  printf("\n Consumer values:  avg: %d,  min: %d, max: %d \n ", myAvg, myMin, myMax);
+
+  // put values into total min max and avg calculations
+  if(myMin < totMin){
+        totMin = myMin;
+  }
+  else if(myMax > totMax){
+        totMax = myMax;
+  }
+        total += myTotal;
+
+  printf("\n --- Consumer exiting ---\n");
+
+  pthread_exit(0);
+}
+
+]0;acarico@bglinux1:~/cs3080/syncs~/cs3080/syncs$ g++ synct.cpp -o synct -pthread
+]0;acarico@bglinux1:~/cs3080/syncs~/cs3080/syncs$ ./synct 200 1000
+
+ **** Main Program creating threads ++++ 
+
+ ---Consumer Started --- 
+
+ Consumer says buffer is empty, unable to find product
+
+ ---Consumer Started --- 
+
+ Consumer says buffer is empty, unable to find product
+
+ ---Consumer Started --- 
+
+ Consumer says buffer is empty, unable to find product
+ 
++++Producer Started+++ 
+  Produced item 397
+  Produced item 67
+  Produced item 441
+  Produced item 792
+  Produced item 567
+  Produced item 152
+  Produced item 77
+  Produced item 318
+  Produced item 476
+  Produced item 585
+
+ Producer found the buffer is full, is waiting currently
+ 
++++Producer Started+++ 
+
+ Producer found the buffer is full, is waiting currently
+ 
++++Producer Started+++ 
+
+ Producer found the buffer is full, is waiting currently
+
+ ---Consumer Started --- 
+Consuming item: 0
+Consuming item: 67
+Consuming item: 441
+Consuming item: 792
+Consuming item: 567
+Consuming item: 152
+Consuming item: 77
+Consuming item: 318
+Consuming item: 476
+Consuming item: 585
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ ---Consumer Started --- 
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 371
+  Produced item 85
+  Produced item 262
+  Produced item 901
+  Produced item 890
+  Produced item 955
+  Produced item 170
+  Produced item 764
+  Produced item 533
+  Produced item 110
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 397
+Consuming item: 85
+Consuming item: 262
+Consuming item: 901
+Consuming item: 890
+Consuming item: 955
+Consuming item: 170
+Consuming item: 764
+Consuming item: 533
+Consuming item: 110
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 550
+  Produced item 46
+  Produced item 360
+  Produced item 307
+  Produced item 280
+  Produced item 883
+  Produced item 900
+  Produced item 651
+  Produced item 331
+  Produced item 734
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 371
+Consuming item: 46
+Consuming item: 360
+Consuming item: 307
+Consuming item: 280
+Consuming item: 883
+Consuming item: 900
+Consuming item: 651
+Consuming item: 331
+Consuming item: 734
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 142
+  Produced item 80
+  Produced item 154
+  Produced item 583
+  Produced item 873
+  Produced item 73
+  Produced item 87
+  Produced item 302
+  Produced item 391
+  Produced item 916
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 550
+Consuming item: 80
+Consuming item: 154
+Consuming item: 583
+Consuming item: 873
+Consuming item: 73
+Consuming item: 87
+Consuming item: 302
+Consuming item: 391
+Consuming item: 916
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 887
+  Produced item 762
+  Produced item 1
+  Produced item 150
+  Produced item 15
+  Produced item 891
+  Produced item 105
+  Produced item 186
+  Produced item 7
+  Produced item 990
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 142
+Consuming item: 762
+Consuming item: 1
+Consuming item: 150
+Consuming item: 15
+Consuming item: 891
+Consuming item: 105
+Consuming item: 186
+Consuming item: 7
+Consuming item: 990
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 648
+  Produced item 557
+  Produced item 36
+  Produced item 8
+  Produced item 216
+  Produced item 669
+  Produced item 243
+  Produced item 469
+  Produced item 672
+  Produced item 926
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 887
+Consuming item: 557
+Consuming item: 36
+Consuming item: 8
+Consuming item: 216
+Consuming item: 669
+Consuming item: 243
+Consuming item: 469
+Consuming item: 672
+Consuming item: 926
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 555
+  Produced item 814
+  Produced item 7
+  Produced item 709
+  Produced item 749
+  Produced item 232
+  Produced item 782
+  Produced item 837
+  Produced item 534
+  Produced item 173
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 648
+Consuming item: 814
+Consuming item: 7
+Consuming item: 709
+Consuming item: 749
+Consuming item: 232
+Consuming item: 782
+Consuming item: 837
+Consuming item: 534
+Consuming item: 173
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 753
+  Produced item 422
+  Produced item 287
+  Produced item 106
+  Produced item 924
+  Produced item 655
+  Produced item 997
+  Produced item 29
+  Produced item 841
+  Produced item 4
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 0
+Consuming item: 422
+Consuming item: 287
+Consuming item: 106
+Consuming item: 924
+Consuming item: 655
+Consuming item: 997
+Consuming item: 29
+Consuming item: 841
+Consuming item: 4
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 20
+  Produced item 841
+  Produced item 913
+  Produced item 408
+  Produced item 849
+Consuming item: 397
+Consuming item: 841
+Consuming item: 913
+Consuming item: 408
+Consuming item: 849
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 481
+  Produced item 429
+  Produced item 92
+  Produced item 950
+  Produced item 453
+  Produced item 371
+  Produced item 506
+  Produced item 619
+  Produced item 378
+  Produced item 567
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+ 
++++Producer Started+++ 
+
+ Producer found the buffer is full, is waiting currently
+
+ ---Consumer Started --- 
+Consuming item: 481
+Consuming item: 429
+Consuming item: 92
+Consuming item: 950
+Consuming item: 453
+Consuming item: 371
+Consuming item: 506
+Consuming item: 619
+Consuming item: 378
+Consuming item: 567
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 721
+  Produced item 610
+  Produced item 350
+  Produced item 558
+  Produced item 144
+  Produced item 875
+  Produced item 663
+  Produced item 918
+  Produced item 515
+  Produced item 769
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 555
+Consuming item: 610
+Consuming item: 350
+Consuming item: 558
+Consuming item: 144
+Consuming item: 875
+Consuming item: 663
+Consuming item: 918
+Consuming item: 515
+Consuming item: 769
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 842
+  Produced item 170
+  Produced item 118
+  Produced item 224
+  Produced item 363
+  Produced item 474
+  Produced item 244
+  Produced item 204
+  Produced item 739
+  Produced item 4
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 481
+Consuming item: 170
+Consuming item: 118
+Consuming item: 224
+Consuming item: 363
+Consuming item: 474
+Consuming item: 244
+Consuming item: 204
+Consuming item: 739
+Consuming item: 4
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 53
+  Produced item 220
+  Produced item 786
+  Produced item 497
+  Produced item 523
+  Produced item 239
+  Produced item 868
+  Produced item 381
+  Produced item 211
+  Produced item 598
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 842
+Consuming item: 220
+Consuming item: 786
+Consuming item: 497
+Consuming item: 523
+Consuming item: 239
+Consuming item: 868
+Consuming item: 381
+Consuming item: 211
+Consuming item: 598
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 948
+  Produced item 932
+  Produced item 208
+  Produced item 650
+  Produced item 842
+  Produced item 705
+  Produced item 526
+  Produced item 505
+  Produced item 623
+  Produced item 41
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 53
+Consuming item: 932
+Consuming item: 208
+Consuming item: 650
+Consuming item: 842
+Consuming item: 705
+Consuming item: 526
+Consuming item: 505
+Consuming item: 623
+Consuming item: 41
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 626
+  Produced item 466
+  Produced item 211
+  Produced item 744
+  Produced item 690
+  Produced item 574
+  Produced item 570
+  Produced item 286
+  Produced item 130
+  Produced item 309
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 948
+Consuming item: 466
+Consuming item: 211
+Consuming item: 744
+Consuming item: 690
+Consuming item: 574
+Consuming item: 570
+Consuming item: 286
+Consuming item: 130
+Consuming item: 309
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 642
+  Produced item 183
+  Produced item 529
+  Produced item 428
+  Produced item 32
+  Produced item 404
+  Produced item 20
+  Produced item 253
+  Produced item 785
+  Produced item 231
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 626
+Consuming item: 183
+Consuming item: 529
+Consuming item: 428
+Consuming item: 32
+Consuming item: 404
+Consuming item: 20
+ 
++++Producer Started+++ 
+Consuming item: 253
+Consuming item: 785
+Consuming item: 231
+
+ Consumer says buffer is empty, unable to find product
+ 
++++Producer Started+++ 
+  Produced item 851
+  Produced item 734
+  Produced item 163
+  Produced item 60
+  Produced item 384
+  Produced item 357
+  Produced item 765
+  Produced item 910
+  Produced item 862
+  Produced item 740
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 642
+Consuming item: 734
+Consuming item: 163
+Consuming item: 60
+Consuming item: 384
+Consuming item: 357
+Consuming item: 765
+Consuming item: 910
+Consuming item: 862
+Consuming item: 740
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 303
+  Produced item 488
+  Produced item 558
+  Produced item 866
+  Produced item 584
+  Produced item 248
+  Produced item 792
+  Produced item 154
+  Produced item 886
+  Produced item 922
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 851
+Consuming item: 488
+Consuming item: 558
+Consuming item: 866
+Consuming item: 584
+Consuming item: 248
+Consuming item: 792
+Consuming item: 154
+Consuming item: 886
+Consuming item: 922
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 815
+  Produced item 529
+  Produced item 457
+  Produced item 696
+  Produced item 309
+  Produced item 490
+  Produced item 101
+  Produced item 329
+  Produced item 95
+  Produced item 886
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 303
+Consuming item: 529
+Consuming item: 457
+Consuming item: 696
+Consuming item: 309
+Consuming item: 490
+Consuming item: 101
+Consuming item: 329
+Consuming item: 95
+Consuming item: 886
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 560
+  Produced item 946
+  Produced item 620
+  Produced item 75
+  Produced item 358
+  Produced item 357
+  Produced item 432
+  Produced item 475
+  Produced item 619
+  Produced item 646
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 815
+Consuming item: 946
+Consuming item: 620
+Consuming item: 75
+Consuming item: 358
+Consuming item: 357
+Consuming item: 432
+Consuming item: 475
+Consuming item: 619
+Consuming item: 646
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 216
+  Produced item 923
+  Produced item 486
+  Produced item 774
+  Produced item 141
+  Produced item 422
+  Produced item 375
+  Produced item 934
+  Produced item 576
+  Produced item 613
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 655
+Consuming item: 923
+Consuming item: 486
+Consuming item: 774
+Consuming item: 141
+Consuming item: 422
+Consuming item: 375
+Consuming item: 934
+Consuming item: 576
+Consuming item: 613
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 856
+  Produced item 743
+  Produced item 142
+  Produced item 666
+  Produced item 440
+  Produced item 452
+  Produced item 508
+  Produced item 541
+  Produced item 133
+  Produced item 603
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 216
+Consuming item: 743
+Consuming item: 142
+Consuming item: 666
+Consuming item: 440
+Consuming item: 452
+Consuming item: 508
+Consuming item: 541
+Consuming item: 133
+Consuming item: 603
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 427
+  Produced item 694
+  Produced item 549
+  Produced item 400
+  Produced item 121
+  Produced item 908
+  Produced item 757
+  Produced item 906
+  Produced item 735
+  Produced item 376
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 0
+Consuming item: 694
+Consuming item: 549
+Consuming item: 400
+Consuming item: 121
+Consuming item: 908
+Consuming item: 757
+Consuming item: 906
+Consuming item: 735
+Consuming item: 376
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 904
+  Produced item 951
+  Produced item 651
+  Produced item 391
+  Produced item 78
+  Produced item 793
+  Produced item 813
+  Produced item 453
+  Produced item 79
+  Produced item 742
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 560
+Consuming item: 951
+Consuming item: 651
+Consuming item: 391
+Consuming item: 78
+Consuming item: 793
+Consuming item: 813
+Consuming item: 453
+Consuming item: 79
+Consuming item: 742
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 66
+  Produced item 287
+  Produced item 485
+  Produced item 561
+  Produced item 953
+  Produced item 277
+  Produced item 365
+  Produced item 461
+  Produced item 818
+  Produced item 498
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 721
+Consuming item: 287
+Consuming item: 485
+Consuming item: 561
+Consuming item: 953
+Consuming item: 277
+Consuming item: 365
+Consuming item: 461
+Consuming item: 818
+Consuming item: 498
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 64
+  Produced item 598
+  Produced item 544
+  Produced item 966
+  Produced item 998
+  Produced item 666
+  Produced item 226
+  Produced item 107
+  Produced item 924
+  Produced item 961
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 856
+Consuming item: 598
+Consuming item: 544
+Consuming item: 966
+Consuming item: 998
+Consuming item: 666
+Consuming item: 226
+Consuming item: 107
+Consuming item: 924
+Consuming item: 961
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 835
+  Produced item 828
+  Produced item 913
+  Produced item 839
+  Produced item 571
+  Produced item 343
+  Produced item 632
+  Produced item 385
+  Produced item 148
+  Produced item 711
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 753
+Consuming item: 828
+Consuming item: 913
+Consuming item: 839
+Consuming item: 571
+Consuming item: 343
+Consuming item: 632
+Consuming item: 385
+Consuming item: 148
+Consuming item: 711
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 479
+  Produced item 214
+  Produced item 350
+  Produced item 316
+  Produced item 127
+  Produced item 304
+  Produced item 594
+  Produced item 492
+  Produced item 765
+  Produced item 412
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 835
+Consuming item: 214
+Consuming item: 350
+Consuming item: 316
+Consuming item: 127
+Consuming item: 304
+Consuming item: 594
+Consuming item: 492
+Consuming item: 765
+Consuming item: 412
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 343
+  Produced item 182
+  Produced item 362
+  Produced item 887
+  Produced item 148
+  Produced item 712
+  Produced item 905
+  Produced item 726
+  Produced item 819
+  Produced item 829
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 479
+Consuming item: 182
+Consuming item: 362
+Consuming item: 887
+Consuming item: 148
+Consuming item: 712
+Consuming item: 905
+Consuming item: 726
+Consuming item: 819
+Consuming item: 829
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 687
+  Produced item 7
+  Produced item 10
+  Produced item 952
+  Produced item 846
+  Produced item 581
+  Produced item 295
+  Produced item 830
+  Produced item 318
+  Produced item 443
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 66
+Consuming item: 7
+Consuming item: 10
+Consuming item: 952
+Consuming item: 846
+Consuming item: 581
+Consuming item: 295
+Consuming item: 830
+Consuming item: 318
+Consuming item: 443
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 893
+  Produced item 797
+  Produced item 10
+  Produced item 243
+  Produced item 466
+  Produced item 137
+  Produced item 547
+  Produced item 60
+  Produced item 982
+  Produced item 665
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 343
+Consuming item: 797
+Consuming item: 10
+Consuming item: 243
+Consuming item: 466
+Consuming item: 137
+Consuming item: 547
+Consuming item: 60
+Consuming item: 982
+Consuming item: 665
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 824
+  Produced item 325
+  Produced item 199
+  Produced item 187
+  Produced item 564
+  Produced item 699
+  Produced item 251
+  Produced item 470
+  Produced item 425
+  Produced item 423
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 893
+Consuming item: 325
+Consuming item: 199
+Consuming item: 187
+Consuming item: 564
+Consuming item: 699
+Consuming item: 251
+Consuming item: 470
+Consuming item: 425
+Consuming item: 423
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 651
+  Produced item 112
+  Produced item 430
+  Produced item 13
+  Produced item 65
+  Produced item 628
+  Produced item 595
+  Produced item 712
+  Produced item 458
+  Produced item 913
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 824
+Consuming item: 112
+Consuming item: 430
+Consuming item: 13
+Consuming item: 65
+Consuming item: 628
+Consuming item: 595
+Consuming item: 712
+Consuming item: 458
+Consuming item: 913
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 156
+  Produced item 703
+  Produced item 63
+  Produced item 166
+  Produced item 946
+  Produced item 529
+  Produced item 655
+  Produced item 846
+  Produced item 941
+  Produced item 989
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 651
+Consuming item: 703
+Consuming item: 63
+Consuming item: 166
+Consuming item: 946
+Consuming item: 529
+Consuming item: 655
+Consuming item: 846
+Consuming item: 941
+Consuming item: 989
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 863
+  Produced item 117
+  Produced item 666
+  Produced item 414
+  Produced item 656
+  Produced item 231
+  Produced item 113
+  Produced item 908
+  Produced item 53
+  Produced item 538
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 156
+Consuming item: 117
+Consuming item: 666
+Consuming item: 414
+Consuming item: 656
+Consuming item: 231
+Consuming item: 113
+Consuming item: 908
+Consuming item: 53
+Consuming item: 538
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 331
+  Produced item 704
+  Produced item 650
+  Produced item 113
+  Produced item 718
+  Produced item 67
+  Produced item 741
+  Produced item 665
+  Produced item 780
+  Produced item 551
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 863
+Consuming item: 704
+Consuming item: 650
+Consuming item: 113
+Consuming item: 718
+Consuming item: 67
+Consuming item: 741
+Consuming item: 665
+Consuming item: 780
+Consuming item: 551
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 930
+  Produced item 288
+  Produced item 606
+  Produced item 993
+  Produced item 806
+  Produced item 904
+  Produced item 874
+  Produced item 813
+  Produced item 750
+  Produced item 167
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 331
+Consuming item: 64
+Consuming item: 606
+Consuming item: 993
+Consuming item: 806
+Consuming item: 904
+Consuming item: 874
+Consuming item: 813
+Consuming item: 750
+Consuming item: 167
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 803
+  Produced item 965
+  Produced item 285
+  Produced item 469
+  Produced item 379
+  Produced item 941
+  Produced item 52
+  Produced item 492
+  Produced item 201
+  Produced item 105
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 687
+Consuming item: 965
+Consuming item: 285
+Consuming item: 469
+Consuming item: 379
+Consuming item: 941
+Consuming item: 52
+Consuming item: 492
+Consuming item: 201
+Consuming item: 105
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 382
+  Produced item 884
+  Produced item 810
+  Produced item 385
+  Produced item 997
+  Produced item 880
+  Produced item 452
+  Produced item 90
+  Produced item 545
+  Produced item 584
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 606
+Consuming item: 884
+Consuming item: 810
+Consuming item: 385
+Consuming item: 997
+Consuming item: 880
+Consuming item: 452
+Consuming item: 90
+Consuming item: 545
+Consuming item: 584
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 641
+  Produced item 475
+  Produced item 872
+  Produced item 599
+  Produced item 821
+  Produced item 678
+  Produced item 504
+  Produced item 47
+  Produced item 492
+  Produced item 606
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 382
+Consuming item: 475
+Consuming item: 872
+Consuming item: 599
+Consuming item: 821
+Consuming item: 678
+Consuming item: 504
+Consuming item: 47
+Consuming item: 492
+Consuming item: 606
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 215
+  Produced item 647
+  Produced item 572
+  Produced item 852
+  Produced item 468
+  Produced item 303
+  Produced item 145
+  Produced item 521
+  Produced item 148
+  Produced item 699
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 641
+Consuming item: 647
+Consuming item: 572
+Consuming item: 852
+Consuming item: 468
+Consuming item: 303
+Consuming item: 145
+Consuming item: 521
+Consuming item: 148
+Consuming item: 699
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 626
+  Produced item 530
+  Produced item 583
+  Produced item 788
+  Produced item 915
+  Produced item 581
+  Produced item 668
+  Produced item 720
+  Produced item 671
+  Produced item 565
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 904
+Consuming item: 530
+Consuming item: 583
+Consuming item: 788
+Consuming item: 915
+Consuming item: 581
+Consuming item: 668
+Consuming item: 720
+Consuming item: 671
+Consuming item: 565
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 656
+  Produced item 665
+  Produced item 41
+  Produced item 529
+  Produced item 264
+  Produced item 214
+  Produced item 559
+  Produced item 768
+  Produced item 613
+  Produced item 403
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 215
+Consuming item: 665
+Consuming item: 41
+Consuming item: 529
+Consuming item: 264
+Consuming item: 214
+Consuming item: 559
+Consuming item: 768
+Consuming item: 613
+Consuming item: 403
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 727
+  Produced item 180
+  Produced item 402
+  Produced item 299
+  Produced item 32
+  Produced item 871
+  Produced item 954
+  Produced item 530
+  Produced item 392
+  Produced item 102
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 656
+Consuming item: 180
+Consuming item: 402
+Consuming item: 299
+Consuming item: 32
+Consuming item: 871
+Consuming item: 954
+Consuming item: 530
+Consuming item: 392
+Consuming item: 102
+  Produced item 229
+  Produced item 18
+  Produced item 633
+  Produced item 812
+  Produced item 807
+  Produced item 900
+  Produced item 393
+  Produced item 827
+  Produced item 972
+  Produced item 417
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 803
+Consuming item: 18
+Consuming item: 633
+Consuming item: 812
+Consuming item: 807
+Consuming item: 900
+Consuming item: 393
+Consuming item: 827
+Consuming item: 972
+Consuming item: 417
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 393
+  Produced item 629
+Consuming item: 626
+Consuming item: 629
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 434
+  Produced item 786
+  Produced item 510
+  Produced item 50
+  Produced item 0
+  Produced item 69
+  Produced item 171
+  Produced item 613
+  Produced item 825
+  Produced item 898
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 930
+Consuming item: 786
+Consuming item: 510
+Consuming item: 50
+Consuming item: 0
+Consuming item: 69
+Consuming item: 171
+Consuming item: 613
+Consuming item: 825
+Consuming item: 898
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 794
+  Produced item 227
+  Produced item 197
+  Produced item 178
+  Produced item 98
+  Produced item 151
+  Produced item 708
+  Produced item 490
+  Produced item 606
+  Produced item 289
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 633
+Consuming item: 227
+Consuming item: 197
+Consuming item: 178
+Consuming item: 98
+Consuming item: 151
+Consuming item: 708
+Consuming item: 490
+Consuming item: 606
+Consuming item: 289
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 861
+  Produced item 591
+  Produced item 102
+  Produced item 20
+  Produced item 491
+  Produced item 847
+  Produced item 847
+  Produced item 816
+  Produced item 616
+  Produced item 240
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 434
+Consuming item: 591
+Consuming item: 102
+Consuming item: 20
+Consuming item: 491
+Consuming item: 847
+Consuming item: 847
+Consuming item: 816
+Consuming item: 616
+Consuming item: 240
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 445
+  Produced item 50
+  Produced item 26
+  Produced item 955
+  Produced item 101
+  Produced item 378
+  Produced item 376
+  Produced item 272
+  Produced item 344
+  Produced item 201
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 861
+Consuming item: 50
+Consuming item: 26
+Consuming item: 955
+Consuming item: 101
+Consuming item: 378
+Consuming item: 376
+Consuming item: 272
+Consuming item: 344
+Consuming item: 201
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 170
+  Produced item 490
+  Produced item 781
+  Produced item 719
+  Produced item 668
+  Produced item 879
+  Produced item 222
+  Produced item 729
+  Produced item 722
+  Produced item 828
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 229
+Consuming item: 490
+Consuming item: 781
+Consuming item: 719
+Consuming item: 668
+Consuming item: 879
+Consuming item: 222
+Consuming item: 729
+Consuming item: 722
+Consuming item: 828
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 18
+  Produced item 583
+  Produced item 419
+  Produced item 472
+  Produced item 603
+  Produced item 263
+  Produced item 672
+  Produced item 802
+  Produced item 79
+  Produced item 288
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 794
+Consuming item: 583
+Consuming item: 419
+Consuming item: 472
+Consuming item: 603
+Consuming item: 263
+Consuming item: 672
+Consuming item: 802
+Consuming item: 79
+Consuming item: 288
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 43
+  Produced item 524
+  Produced item 339
+  Produced item 421
+  Produced item 831
+  Produced item 792
+  Produced item 800
+  Produced item 559
+  Produced item 416
+  Produced item 496
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 18
+Consuming item: 524
+Consuming item: 339
+Consuming item: 421
+Consuming item: 831
+Consuming item: 792
+Consuming item: 67
+Consuming item: 559
+Consuming item: 416
+Consuming item: 496
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 761
+  Produced item 586
+  Produced item 986
+  Produced item 542
+  Produced item 657
+  Produced item 6
+  Produced item 773
+  Produced item 879
+  Produced item 735
+  Produced item 847
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 229
+Consuming item: 586
+Consuming item: 986
+Consuming item: 542
+Consuming item: 657
+Consuming item: 6
+Consuming item: 773
+Consuming item: 879
+Consuming item: 735
+Consuming item: 847
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 708
+  Produced item 106
+  Produced item 782
+  Produced item 479
+  Produced item 578
+  Produced item 737
+  Produced item 742
+  Produced item 250
+  Produced item 540
+  Produced item 821
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 761
+Consuming item: 106
+Consuming item: 782
+Consuming item: 479
+Consuming item: 578
+Consuming item: 737
+Consuming item: 742
+Consuming item: 250
+Consuming item: 540
+Consuming item: 821
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 891
+  Produced item 583
+  Produced item 697
+  Produced item 582
+  Produced item 4
+  Produced item 880
+  Produced item 374
+  Produced item 156
+  Produced item 440
+  Produced item 790
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 708
+Consuming item: 583
+Consuming item: 697
+Consuming item: 582
+Consuming item: 4
+Consuming item: 880
+Consuming item: 374
+Consuming item: 156
+Consuming item: 440
+Consuming item: 790
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 652
+  Produced item 201
+  Produced item 728
+  Produced item 990
+  Produced item 95
+  Produced item 385
+  Produced item 997
+  Produced item 220
+  Produced item 616
+  Produced item 732
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 43
+Consuming item: 201
+Consuming item: 728
+Consuming item: 990
+Consuming item: 95
+Consuming item: 385
+Consuming item: 997
+Consuming item: 220
+Consuming item: 616
+Consuming item: 732
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 68
+  Produced item 676
+  Produced item 190
+  Produced item 850
+  Produced item 156
+  Produced item 121
+  Produced item 588
+  Produced item 898
+  Produced item 723
+  Produced item 128
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 652
+Consuming item: 676
+Consuming item: 190
+Consuming item: 850
+Consuming item: 156
+Consuming item: 121
+Consuming item: 588
+Consuming item: 898
+Consuming item: 723
+Consuming item: 128
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 720
+  Produced item 614
+  Produced item 63
+  Produced item 769
+  Produced item 196
+  Produced item 419
+  Produced item 650
+  Produced item 922
+  Produced item 928
+  Produced item 90
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 170
+Consuming item: 614
+Consuming item: 63
+Consuming item: 769
+Consuming item: 196
+Consuming item: 419
+Consuming item: 650
+Consuming item: 922
+Consuming item: 928
+Consuming item: 90
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 712
+  Produced item 932
+  Produced item 643
+  Produced item 792
+  Produced item 923
+  Produced item 90
+  Produced item 529
+  Produced item 920
+  Produced item 310
+  Produced item 146
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 720
+Consuming item: 932
+Consuming item: 643
+Consuming item: 792
+Consuming item: 923
+Consuming item: 90
+Consuming item: 529
+Consuming item: 920
+Consuming item: 310
+Consuming item: 146
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 4
+  Produced item 730
+  Produced item 822
+  Produced item 195
+  Produced item 933
+  Produced item 978
+  Produced item 316
+  Produced item 873
+  Produced item 229
+  Produced item 39
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 445
+Consuming item: 730
+Consuming item: 822
+Consuming item: 195
+Consuming item: 933
+Consuming item: 978
+Consuming item: 316
+Consuming item: 873
+Consuming item: 229
+Consuming item: 39
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 353
+  Produced item 301
+  Produced item 6
+  Produced item 768
+  Produced item 70
+  Produced item 202
+  Produced item 187
+  Produced item 720
+  Produced item 125
+  Produced item 115
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 68
+Consuming item: 301
+Consuming item: 6
+Consuming item: 768
+Consuming item: 70
+Consuming item: 202
+Consuming item: 187
+Consuming item: 720
+Consuming item: 125
+Consuming item: 115
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 162
+  Produced item 189
+  Produced item 400
+  Produced item 805
+  Produced item 334
+  Produced item 323
+  Produced item 247
+  Produced item 863
+  Produced item 243
+  Produced item 910
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 891
+Consuming item: 189
+Consuming item: 400
+Consuming item: 805
+Consuming item: 334
+Consuming item: 323
+Consuming item: 247
+Consuming item: 863
+Consuming item: 243
+Consuming item: 910
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 361
+  Produced item 599
+  Produced item 640
+  Produced item 536
+  Produced item 794
+  Produced item 925
+  Produced item 866
+  Produced item 110
+  Produced item 798
+  Produced item 95
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 162
+Consuming item: 599
+Consuming item: 640
+Consuming item: 536
+Consuming item: 794
+Consuming item: 925
+Consuming item: 866
+Consuming item: 110
+Consuming item: 798
+
+ Consumer values:  avg: 520,  min: 0, max: 997 
+ 
+ --- Consumer exiting ---
+Consuming item: 712
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 502
+  Produced item 503
+  Produced item 396
+  Produced item 508
+  Produced item 271
+  Produced item 819
+  Produced item 62
+  Produced item 459
+  Produced item 891
+  Produced item 187
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 361
+Consuming item: 503
+Consuming item: 396
+Consuming item: 508
+Consuming item: 271
+Consuming item: 819
+Consuming item: 62
+Consuming item: 459
+Consuming item: 891
+Consuming item: 187
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 926
+  Produced item 54
+  Produced item 729
+  Produced item 678
+  Produced item 211
+  Produced item 63
+  Produced item 1
+  Produced item 459
+  Produced item 278
+  Produced item 596
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 502
+Consuming item: 54
+Consuming item: 729
+Consuming item: 678
+Consuming item: 211
+Consuming item: 63
+Consuming item: 1
+Consuming item: 459
+Consuming item: 278
+Consuming item: 596
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 369
+  Produced item 640
+  Produced item 196
+  Produced item 9
+  Produced item 176
+  Produced item 990
+  Produced item 287
+  Produced item 42
+  Produced item 453
+  Produced item 437
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 926
+Consuming item: 640
+Consuming item: 196
+Consuming item: 9
+Consuming item: 176
+Consuming item: 990
+Consuming item: 287
+Consuming item: 42
+Consuming item: 453
+Consuming item: 437
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 138
+  Produced item 307
+  Produced item 941
+  Produced item 886
+  Produced item 815
+  Produced item 212
+  Produced item 705
+  Produced item 877
+  Produced item 23
+  Produced item 597
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 353
+Consuming item: 307
+Consuming item: 941
+Consuming item: 886
+Consuming item: 815
+Consuming item: 212
+Consuming item: 705
+Consuming item: 877
+Consuming item: 23
+Consuming item: 597
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 417
+  Produced item 302
+  Produced item 3
+  Produced item 498
+  Produced item 980
+  Produced item 214
+  Produced item 561
+  Produced item 982
+  Produced item 673
+  Produced item 839
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 369
+Consuming item: 302
+Consuming item: 3
+Consuming item: 498
+Consuming item: 980
+Consuming item: 214
+Consuming item: 561
+Consuming item: 982
+Consuming item: 673
+Consuming item: 839
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 930
+  Produced item 42
+  Produced item 479
+  Produced item 126
+  Produced item 404
+  Produced item 7
+  Produced item 469
+  Produced item 691
+  Produced item 50
+  Produced item 274
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 417
+Consuming item: 42
+Consuming item: 479
+Consuming item: 126
+Consuming item: 404
+Consuming item: 7
+Consuming item: 469
+Consuming item: 691
+Consuming item: 50
+Consuming item: 274
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 128
+  Produced item 540
+  Produced item 581
+  Produced item 69
+  Produced item 778
+  Produced item 748
+  Produced item 634
+  Produced item 484
+  Produced item 977
+  Produced item 657
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 930
+Consuming item: 540
+Consuming item: 581
+Consuming item: 69
+Consuming item: 778
+Consuming item: 748
+Consuming item: 634
+Consuming item: 484
+Consuming item: 977
+
+ Consumer values:  avg: 491,  min: 1, max: 990 
+ 
+ --- Consumer exiting ---
+  Produced item 433
+  Produced item 394
+  Produced item 959
+  Produced item 436
+  Produced item 892
+  Produced item 292
+  Produced item 650
+  Produced item 805
+  Produced item 274
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 4
+Consuming item: 433
+Consuming item: 394
+Consuming item: 959
+Consuming item: 436
+Consuming item: 892
+Consuming item: 292
+Consuming item: 650
+Consuming item: 805
+Consuming item: 274
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 324
+  Produced item 997
+  Produced item 204
+  Produced item 718
+  Produced item 828
+  Produced item 683
+  Produced item 122
+  Produced item 836
+  Produced item 152
+  Produced item 165
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 138
+Consuming item: 997
+Consuming item: 204
+Consuming item: 718
+Consuming item: 828
+Consuming item: 683
+Consuming item: 122
+Consuming item: 836
+Consuming item: 152
+Consuming item: 165
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 238
+  Produced item 426
+  Produced item 646
+  Produced item 130
+  Produced item 359
+  Produced item 715
+  Produced item 908
+  Produced item 107
+  Produced item 701
+  Produced item 392
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 657
+Consuming item: 426
+Consuming item: 646
+Consuming item: 130
+Consuming item: 359
+Consuming item: 715
+Consuming item: 908
+Consuming item: 107
+Consuming item: 701
+Consuming item: 392
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 84
+  Produced item 359
+  Produced item 177
+  Produced item 831
+  Produced item 670
+  Produced item 613
+  Produced item 75
+  Produced item 962
+  Produced item 616
+  Produced item 881
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 238
+Consuming item: 359
+Consuming item: 177
+Consuming item: 831
+Consuming item: 670
+Consuming item: 613
+Consuming item: 75
+Consuming item: 962
+Consuming item: 616
+Consuming item: 881
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 588
+  Produced item 292
+  Produced item 230
+  Produced item 145
+  Produced item 10
+  Produced item 58
+  Produced item 828
+  Produced item 485
+  Produced item 246
+  Produced item 332
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 84
+Consuming item: 292
+Consuming item: 230
+Consuming item: 145
+Consuming item: 10
+Consuming item: 58
+Consuming item: 828
+Consuming item: 485
+Consuming item: 246
+Consuming item: 332
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 650
+  Produced item 484
+  Produced item 110
+  Produced item 296
+  Produced item 614
+  Produced item 469
+  Produced item 364
+  Produced item 523
+  Produced item 576
+  Produced item 65
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 588
+Consuming item: 484
+Consuming item: 110
+Consuming item: 296
+Consuming item: 614
+Consuming item: 469
+Consuming item: 364
+Consuming item: 523
+Consuming item: 576
+Consuming item: 65
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 267
+  Produced item 660
+  Produced item 776
+  Produced item 445
+  Produced item 491
+  Produced item 799
+  Produced item 410
+  Produced item 919
+  Produced item 113
+  Produced item 378
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 650
+Consuming item: 660
+Consuming item: 776
+Consuming item: 445
+Consuming item: 491
+Consuming item: 799
+Consuming item: 410
+Consuming item: 919
+Consuming item: 113
+Consuming item: 378
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 800
+  Produced item 702
+  Produced item 670
+  Produced item 382
+  Produced item 199
+  Produced item 33
+  Produced item 440
+  Produced item 27
+  Produced item 518
+  Produced item 687
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 267
+Consuming item: 702
+Consuming item: 670
+Consuming item: 382
+Consuming item: 199
+Consuming item: 33
+Consuming item: 440
+Consuming item: 27
+Consuming item: 518
+Consuming item: 687
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 711
+  Produced item 520
+  Produced item 523
+  Produced item 821
+  Produced item 169
+  Produced item 138
+  Produced item 290
+  Produced item 885
+  Produced item 13
+  Produced item 866
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 800
+Consuming item: 520
+Consuming item: 523
+Consuming item: 821
+Consuming item: 169
+Consuming item: 138
+Consuming item: 290
+Consuming item: 885
+Consuming item: 13
+Consuming item: 866
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 302
+  Produced item 280
+  Produced item 878
+  Produced item 79
+  Produced item 77
+  Produced item 722
+  Produced item 230
+  Produced item 488
+  Produced item 641
+  Produced item 343
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 324
+Consuming item: 280
+Consuming item: 878
+Consuming item: 79
+Consuming item: 77
+Consuming item: 722
+Consuming item: 230
+Consuming item: 488
+Consuming item: 641
+Consuming item: 343
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 866
+  Produced item 793
+  Produced item 45
+  Produced item 889
+  Produced item 175
+  Produced item 244
+  Produced item 922
+  Produced item 615
+  Produced item 623
+  Produced item 792
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 559
+Consuming item: 793
+Consuming item: 45
+Consuming item: 889
+Consuming item: 175
+Consuming item: 244
+Consuming item: 922
+Consuming item: 615
+Consuming item: 623
+Consuming item: 792
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 654
+  Produced item 334
+  Produced item 312
+  Produced item 178
+  Produced item 155
+  Produced item 481
+  Produced item 316
+  Produced item 797
+  Produced item 718
+  Produced item 681
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 866
+Consuming item: 334
+Consuming item: 312
+Consuming item: 178
+Consuming item: 155
+Consuming item: 481
+Consuming item: 316
+Consuming item: 797
+Consuming item: 718
+Consuming item: 681
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 663
+  Produced item 21
+  Produced item 961
+  Produced item 542
+  Produced item 100
+  Produced item 391
+  Produced item 616
+  Produced item 330
+  Produced item 231
+  Produced item 257
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 654
+Consuming item: 21
+Consuming item: 961
+Consuming item: 542
+Consuming item: 100
+Consuming item: 391
+Consuming item: 616
+Consuming item: 330
+Consuming item: 231
+Consuming item: 257
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 673
+  Produced item 97
+  Produced item 50
+  Produced item 71
+  Produced item 338
+  Produced item 225
+  Produced item 667
+  Produced item 260
+  Produced item 192
+  Produced item 291
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 663
+Consuming item: 97
+Consuming item: 50
+Consuming item: 71
+Consuming item: 338
+Consuming item: 225
+Consuming item: 667
+Consuming item: 260
+Consuming item: 192
+Consuming item: 291
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 52
+  Produced item 847
+  Produced item 977
+  Produced item 717
+  Produced item 377
+  Produced item 485
+  Produced item 550
+  Produced item 693
+  Produced item 282
+  Produced item 269
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 673
+Consuming item: 847
+Consuming item: 977
+Consuming item: 717
+Consuming item: 377
+Consuming item: 485
+Consuming item: 550
+Consuming item: 693
+Consuming item: 282
+Consuming item: 269
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 726
+  Produced item 946
+  Produced item 290
+  Produced item 687
+  Produced item 840
+  Produced item 742
+  Produced item 78
+  Produced item 456
+  Produced item 424
+  Produced item 309
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 52
+Consuming item: 946
+
+ Consumer values:  avg: 487,  min: 4, max: 977 
+ 
+ --- Consumer exiting ---
+  Produced item 65
+  Produced item 449
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 711
+Consuming item: 302
+Consuming item: 840
+Consuming item: 742
+Consuming item: 78
+Consuming item: 456
+Consuming item: 424
+Consuming item: 309
+Consuming item: 65
+Consuming item: 449
+
+ Consumer says buffer is empty, unable to find product
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 759
+  Produced item 115
+  Produced item 520
+  Produced item 449
+  Produced item 692
+  Produced item 540
+  Produced item 710
+  Produced item 884
+  Produced item 831
+  Produced item 114
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 840
+Consuming item: 115
+Consuming item: 520
+Consuming item: 449
+Consuming item: 692
+Consuming item: 540
+Consuming item: 710
+Consuming item: 884
+Consuming item: 831
+Consuming item: 114
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 83
+  Produced item 160
+  Produced item 183
+  Produced item 460
+  Produced item 645
+  Produced item 734
+  Produced item 505
+  Produced item 928
+  Produced item 355
+  Produced item 231
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 759
+Consuming item: 160
+Consuming item: 183
+Consuming item: 460
+Consuming item: 645
+Consuming item: 734
+Consuming item: 505
+Consuming item: 928
+Consuming item: 355
+Consuming item: 231
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 226
+  Produced item 645
+  Produced item 271
+  Produced item 418
+  Produced item 739
+  Produced item 701
+  Produced item 874
+  Produced item 163
+  Produced item 363
+  Produced item 939
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 83
+Consuming item: 645
+Consuming item: 271
+Consuming item: 418
+Consuming item: 739
+
+ Consumer values:  avg: 497,  min: 0, max: 998 
+ 
+ --- Consumer exiting ---
+  Produced item 612
+  Produced item 474
+  Produced item 406
+  Produced item 485
+  Produced item 923
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 427
+Consuming item: 874
+Consuming item: 163
+Consuming item: 363
+Consuming item: 939
+Consuming item: 612
+Consuming item: 474
+Consuming item: 406
+Consuming item: 485
+Consuming item: 923
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 98
+  Produced item 25
+  Produced item 985
+  Produced item 334
+  Produced item 208
+  Produced item 100
+  Produced item 418
+  Produced item 720
+  Produced item 283
+  Produced item 230
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 701
+Consuming item: 25
+Consuming item: 985
+Consuming item: 334
+Consuming item: 208
+Consuming item: 100
+Consuming item: 418
+Consuming item: 720
+Consuming item: 283
+Consuming item: 230
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 366
+  Produced item 369
+  Produced item 736
+  Produced item 646
+  Produced item 724
+  Produced item 319
+  Produced item 224
+  Produced item 721
+  Produced item 590
+  Produced item 642
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 98
+Consuming item: 369
+Consuming item: 736
+Consuming item: 646
+Consuming item: 724
+Consuming item: 319
+Consuming item: 224
+Consuming item: 721
+Consuming item: 590
+Consuming item: 642
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 460
+  Produced item 644
+  Produced item 868
+  Produced item 975
+  Produced item 7
+  Produced item 159
+
+---Producer Exiting---
+  Produced item 940
+  Produced item 481
+  Produced item 565
+  Produced item 425
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 366
+Consuming item: 644
+Consuming item: 868
+Consuming item: 975
+Consuming item: 7
+Consuming item: 159
+Consuming item: 940
+Consuming item: 481
+Consuming item: 565
+Consuming item: 425
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 404
+  Produced item 15
+  Produced item 802
+  Produced item 390
+
+---Producer Exiting---
+Consuming item: 460
+Consuming item: 15
+Consuming item: 802
+Consuming item: 390
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 349
+  Produced item 362
+  Produced item 842
+  Produced item 119
+  Produced item 434
+  Produced item 477
+  Produced item 702
+  Produced item 152
+  Produced item 847
+  Produced item 790
+
+---Producer Exiting---
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 290
+Consuming item: 362
+Consuming item: 842
+Consuming item: 119
+Consuming item: 434
+Consuming item: 477
+Consuming item: 702
+Consuming item: 152
+Consuming item: 847
+Consuming item: 790
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 798
+  Produced item 923
+  Produced item 109
+  Produced item 22
+  Produced item 645
+  Produced item 52
+  Produced item 16
+  Produced item 457
+  Produced item 696
+  Produced item 884
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 349
+Consuming item: 923
+Consuming item: 109
+Consuming item: 22
+Consuming item: 645
+Consuming item: 52
+Consuming item: 16
+Consuming item: 457
+Consuming item: 696
+Consuming item: 884
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 433
+  Produced item 55
+  Produced item 395
+  Produced item 373
+  Produced item 536
+  Produced item 960
+  Produced item 150
+  Produced item 292
+  Produced item 327
+  Produced item 304
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 798
+Consuming item: 55
+Consuming item: 395
+Consuming item: 373
+Consuming item: 536
+Consuming item: 960
+Consuming item: 150
+Consuming item: 292
+Consuming item: 327
+Consuming item: 304
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 34
+  Produced item 29
+  Produced item 18
+  Produced item 876
+  Produced item 148
+  Produced item 452
+  Produced item 706
+  Produced item 202
+  Produced item 605
+  Produced item 905
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 433
+Consuming item: 29
+Consuming item: 18
+Consuming item: 876
+Consuming item: 148
+Consuming item: 452
+Consuming item: 706
+Consuming item: 202
+Consuming item: 605
+Consuming item: 905
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 992
+  Produced item 755
+  Produced item 828
+  Produced item 102
+  Produced item 130
+  Produced item 825
+  Produced item 506
+  Produced item 146
+  Produced item 283
+  Produced item 554
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 34
+Consuming item: 755
+Consuming item: 828
+Consuming item: 102
+Consuming item: 130
+Consuming item: 825
+Consuming item: 506
+Consuming item: 146
+Consuming item: 283
+Consuming item: 554
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 383
+  Produced item 68
+  Produced item 609
+  Produced item 778
+  Produced item 793
+  Produced item 497
+  Produced item 91
+  Produced item 943
+  Produced item 789
+  Produced item 770
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 992
+Consuming item: 68
+Consuming item: 609
+Consuming item: 778
+Consuming item: 793
+Consuming item: 497
+Consuming item: 91
+Consuming item: 943
+Consuming item: 789
+Consuming item: 770
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 599
+  Produced item 176
+  Produced item 799
+  Produced item 617
+  Produced item 52
+  Produced item 300
+  Produced item 421
+  Produced item 110
+  Produced item 502
+  Produced item 378
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 383
+Consuming item: 176
+Consuming item: 799
+Consuming item: 617
+Consuming item: 52
+Consuming item: 300
+Consuming item: 421
+Consuming item: 110
+Consuming item: 502
+Consuming item: 378
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 15
+  Produced item 495
+  Produced item 134
+  Produced item 844
+  Produced item 949
+  Produced item 264
+  Produced item 669
+  Produced item 455
+  Produced item 762
+  Produced item 304
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 599
+Consuming item: 495
+Consuming item: 134
+Consuming item: 844
+Consuming item: 949
+Consuming item: 264
+Consuming item: 669
+Consuming item: 455
+Consuming item: 762
+Consuming item: 304
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 9
+  Produced item 497
+  Produced item 372
+  Produced item 618
+  Produced item 628
+  Produced item 165
+  Produced item 115
+  Produced item 719
+  Produced item 460
+  Produced item 256
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 15
+Consuming item: 497
+Consuming item: 372
+Consuming item: 618
+Consuming item: 628
+Consuming item: 165
+Consuming item: 115
+Consuming item: 719
+Consuming item: 460
+Consuming item: 256
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 841
+  Produced item 411
+  Produced item 432
+  Produced item 641
+  Produced item 380
+  Produced item 837
+  Produced item 941
+  Produced item 802
+  Produced item 947
+  Produced item 443
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 7
+Consuming item: 411
+Consuming item: 432
+Consuming item: 641
+Consuming item: 380
+Consuming item: 837
+Consuming item: 941
+Consuming item: 802
+Consuming item: 947
+Consuming item: 443
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 180
+  Produced item 963
+  Produced item 290
+  Produced item 666
+  Produced item 159
+  Produced item 239
+  Produced item 930
+  Produced item 828
+  Produced item 694
+  Produced item 45
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 9
+Consuming item: 963
+Consuming item: 290
+Consuming item: 666
+Consuming item: 159
+Consuming item: 239
+Consuming item: 930
+Consuming item: 828
+Consuming item: 694
+Consuming item: 45
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 485
+  Produced item 55
+  Produced item 894
+  Produced item 209
+  Produced item 673
+  Produced item 522
+  Produced item 727
+  Produced item 140
+  Produced item 593
+  Produced item 539
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 180
+Consuming item: 55
+Consuming item: 894
+Consuming item: 209
+Consuming item: 673
+Consuming item: 522
+Consuming item: 727
+Consuming item: 140
+Consuming item: 593
+Consuming item: 539
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 749
+  Produced item 435
+  Produced item 951
+  Produced item 181
+  Produced item 76
+  Produced item 331
+  Produced item 370
+  Produced item 17
+  Produced item 133
+  Produced item 318
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 485
+Consuming item: 435
+Consuming item: 951
+Consuming item: 181
+Consuming item: 76
+Consuming item: 331
+Consuming item: 370
+Consuming item: 17
+Consuming item: 133
+Consuming item: 318
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 812
+  Produced item 666
+  Produced item 633
+  Produced item 103
+  Produced item 332
+  Produced item 792
+  Produced item 342
+  Produced item 615
+  Produced item 972
+  Produced item 389
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 749
+Consuming item: 666
+Consuming item: 633
+Consuming item: 103
+Consuming item: 332
+Consuming item: 792
+Consuming item: 342
+
+ Consumer values:  avg: 449,  min: 6, max: 997 
+ 
+ --- Consumer exiting ---
+  Produced item 12
+  Produced item 457
+  Produced item 444
+  Produced item 906
+  Produced item 19
+  Produced item 470
+  Produced item 429
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 841
+Consuming item: 972
+Consuming item: 389
+Consuming item: 12
+Consuming item: 457
+Consuming item: 444
+Consuming item: 906
+Consuming item: 19
+Consuming item: 470
+Consuming item: 429
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 746
+  Produced item 962
+  Produced item 22
+  Produced item 285
+  Produced item 711
+  Produced item 809
+  Produced item 236
+  Produced item 893
+  Produced item 885
+  Produced item 920
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 615
+Consuming item: 962
+Consuming item: 22
+Consuming item: 285
+Consuming item: 711
+Consuming item: 809
+Consuming item: 236
+Consuming item: 893
+Consuming item: 885
+Consuming item: 920
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 263
+  Produced item 254
+  Produced item 405
+  Produced item 933
+  Produced item 419
+  Produced item 71
+  Produced item 566
+  Produced item 522
+  Produced item 756
+  Produced item 358
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 746
+Consuming item: 254
+Consuming item: 405
+Consuming item: 933
+Consuming item: 419
+Consuming item: 71
+Consuming item: 566
+Consuming item: 522
+Consuming item: 756
+Consuming item: 358
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 216
+  Produced item 371
+  Produced item 331
+  Produced item 957
+  Produced item 383
+  Produced item 140
+  Produced item 754
+  Produced item 641
+  Produced item 159
+  Produced item 224
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 263
+Consuming item: 371
+Consuming item: 331
+Consuming item: 957
+Consuming item: 383
+Consuming item: 140
+Consuming item: 754
+Consuming item: 641
+Consuming item: 159
+Consuming item: 224
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 70
+  Produced item 905
+  Produced item 186
+  Produced item 445
+  Produced item 543
+  Produced item 898
+  Produced item 254
+  Produced item 131
+  Produced item 143
+  Produced item 492
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 216
+Consuming item: 905
+Consuming item: 186
+Consuming item: 445
+Consuming item: 543
+Consuming item: 898
+Consuming item: 254
+Consuming item: 131
+Consuming item: 143
+Consuming item: 492
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 51
+  Produced item 758
+  Produced item 746
+  Produced item 809
+  Produced item 44
+  Produced item 517
+  Produced item 232
+
+---Producer Exiting---
+  Produced item 610
+  Produced item 391
+  Produced item 988
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 70
+Consuming item: 758
+Consuming item: 746
+Consuming item: 809
+Consuming item: 44
+Consuming item: 517
+Consuming item: 232
+Consuming item: 610
+Consuming item: 391
+Consuming item: 988
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 321
+  Produced item 608
+  Produced item 711
+  Produced item 4
+  Produced item 917
+  Produced item 446
+  Produced item 144
+  Produced item 671
+  Produced item 88
+  Produced item 656
+
+ Producer found the buffer is full, is waiting currently
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 51
+Consuming item: 608
+Consuming item: 711
+Consuming item: 4
+Consuming item: 917
+Consuming item: 446
+Consuming item: 144
+Consuming item: 671
+Consuming item: 88
+Consuming item: 656
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 895
+  Produced item 510
+  Produced item 913
+  Produced item 434
+  Produced item 955
+  Produced item 456
+  Produced item 684
+
+---Producer Exiting---
+  Produced item 562
+  Produced item 940
+  Produced item 827
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 321
+Consuming item: 510
+Consuming item: 913
+Consuming item: 434
+Consuming item: 955
+Consuming item: 456
+Consuming item: 684
+Consuming item: 562
+Consuming item: 940
+Consuming item: 827
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 54
+  Produced item 343
+  Produced item 937
+  Produced item 152
+  Produced item 152
+  Produced item 981
+  Produced item 22
+  Produced item 385
+  Produced item 944
+  Produced item 413
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 895
+Consuming item: 343
+Consuming item: 937
+Consuming item: 152
+Consuming item: 152
+Consuming item: 981
+Consuming item: 22
+Consuming item: 385
+Consuming item: 944
+Consuming item: 413
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 725
+  Produced item 265
+  Produced item 21
+  Produced item 437
+  Produced item 621
+  Produced item 291
+  Produced item 235
+  Produced item 765
+  Produced item 962
+  Produced item 323
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 54
+Consuming item: 265
+Consuming item: 21
+Consuming item: 437
+Consuming item: 621
+Consuming item: 291
+Consuming item: 235
+Consuming item: 765
+Consuming item: 962
+Consuming item: 323
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 773
+  Produced item 210
+  Produced item 186
+  Produced item 687
+  Produced item 644
+  Produced item 493
+  Produced item 495
+  Produced item 680
+  Produced item 55
+  Produced item 435
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 725
+Consuming item: 210
+Consuming item: 186
+Consuming item: 687
+Consuming item: 644
+Consuming item: 493
+Consuming item: 495
+Consuming item: 680
+Consuming item: 55
+Consuming item: 435
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 507
+  Produced item 461
+  Produced item 131
+  Produced item 796
+  Produced item 966
+  Produced item 635
+  Produced item 130
+  Produced item 988
+  Produced item 20
+  Produced item 74
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 773
+Consuming item: 461
+Consuming item: 131
+Consuming item: 796
+Consuming item: 966
+Consuming item: 635
+Consuming item: 130
+Consuming item: 988
+Consuming item: 20
+Consuming item: 74
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 401
+  Produced item 98
+  Produced item 691
+  Produced item 775
+  Produced item 887
+  Produced item 312
+  Produced item 66
+  Produced item 122
+  Produced item 429
+  Produced item 380
+
+ Producer found the buffer is full, is waiting currently
+Consuming item: 507
+Consuming item: 98
+Consuming item: 691
+Consuming item: 775
+Consuming item: 887
+Consuming item: 312
+Consuming item: 66
+Consuming item: 122
+Consuming item: 429
+Consuming item: 380
+
+ Consumer says buffer is empty, unable to find product
+  Produced item 798
+  Produced item 203
+  Produced item 942
+  Produced item 984
+  Produced item 242
+  Produced item 938
+
+---Producer Exiting---
+Consuming item: 401
+Consuming item: 203
+Consuming item: 942
+Consuming item: 984
+Consuming item: 242
+Consuming item: 938
+
+ Consumer values:  avg: 503,  min: 0, max: 988 
+ 
+ --- Consumer exiting ---
+Overall values:
+ Min of total: 0. Max of total: 998. Total Average: 491.
+]0;acarico@bglinux1:~/cs3080/syncs~/cs3080/syncs$ exit
+exit
+
+Script done on Mon Nov  1 22:52:09 2021
